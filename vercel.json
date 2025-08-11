@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "installCommand": "npm install --no-package-lock --no-save --force",
+  "framework": "nextjs",
+  "functions": {
+    "app/**/*.ts": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "env": {
+    "FORCE_NPM": "true",
+    "NPM_CONFIG_FUND": "false",
+    "NPM_CONFIG_AUDIT": "false",
+    "NPM_CONFIG_PACKAGE_LOCK": "false"
+  }
+}
