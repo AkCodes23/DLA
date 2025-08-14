@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 
-// Define speech recognition types inline
 interface SpeechRecognitionInline extends EventTarget {
   continuous: boolean
   interimResults: boolean
@@ -24,6 +23,64 @@ interface Message {
   timestamp: Date
 }
 
+const translations = {
+  en: {
+    title: "Driving Licence Authority",
+    subtitle: "AI Voice Assistant - Ava",
+    callActive: "Call Active",
+    listening: "Listening",
+    speaking: "Speaking",
+    ready: "Ready",
+    browserNotice: "Browser Compatibility Notice",
+    browserMessage: "Voice recognition requires Chrome, Edge, or Safari for optimal experience.",
+    microphoneRequired: "Microphone Access Required",
+    microphoneMessage: "Please enable microphone permissions and refresh the page to use voice features.",
+    readyTitle: "Ready to Assist You",
+    readyMessage:
+      "Start a natural conversation with Ava for all your driving licence needs. Get instant help with applications, renewals, and more.",
+    startConversation: "Start Conversation",
+    you: "You",
+    ava: "Ava",
+    speakingStatus: "Speaking...",
+    endCall: "End Call",
+    avaIsSpeaking: "Ava is speaking...",
+    listeningPrompt: "Listening... speak naturally",
+    clickMicrophone: "Microphone is active - speak anytime",
+    greeting:
+      "Hello! Welcome to the Driving Licence Authority. I'm Ava, your virtual assistant. How can I help you today?",
+    language: "Language",
+    micOn: "Microphone On",
+    micOff: "Microphone Off",
+  },
+  ar: {
+    title: "هيئة رخص القيادة",
+    subtitle: "المساعد الصوتي الذكي - آفا",
+    callActive: "المكالمة نشطة",
+    listening: "أستمع",
+    speaking: "أتحدث",
+    ready: "جاهز",
+    browserNotice: "إشعار توافق المتصفح",
+    browserMessage: "يتطلب التعرف على الصوت متصفح Chrome أو Edge أو Safari للحصول على أفضل تجربة.",
+    microphoneRequired: "مطلوب الوصول للميكروفون",
+    microphoneMessage: "يرجى تمكين أذونات الميكروفون وإعادة تحديث الصفحة لاستخدام ميزات الصوت.",
+    readyTitle: "جاهز لمساعدتك",
+    readyMessage:
+      "ابدأ محادثة طبيعية مع آفا لجميع احتياجات رخصة القيادة الخاصة بك. احصل على مساعدة فورية في الطلبات والتجديدات والمزيد.",
+    startConversation: "بدء المحادثة",
+    you: "أنت",
+    ava: "آفا",
+    speakingStatus: "يتحدث...",
+    endCall: "إنهاء المكالمة",
+    avaIsSpeaking: "آفا تتحدث...",
+    listeningPrompt: "أستمع... تحدث بشكل طبيعي",
+    clickMicrophone: "الميكروفون نشط - تحدث في أي وقت",
+    greeting: "مرحباً! أهلاً بك في هيئة رخص القيادة. أنا آفا، مساعدتك الافتراضية. كيف يمكنني مساعدتك اليوم؟",
+    language: "اللغة",
+    micOn: "الميكروفون مفتوح",
+    micOff: "الميكروفون مغلق",
+  },
+}
+
 export default function Home() {
   const [isCallActive, setIsCallActive] = useState(false)
   const [isListening, setIsListening] = useState(false)
@@ -32,8 +89,12 @@ export default function Home() {
   const [currentTranscript, setCurrentTranscript] = useState("")
   const [isVoiceSupported, setIsVoiceSupported] = useState(false)
   const [microphonePermission, setMicrophonePermission] = useState<"granted" | "denied" | "prompt">("prompt")
+  const [language, setLanguage] = useState<"en" | "ar">("en")
+  const [microphoneEnabled, setMicrophoneEnabled] = useState(true) // Added microphone toggle state
 
   const recognitionRef = useRef<SpeechRecognitionInline | null>(null)
+
+  const t = translations[language]
 
   const addMessage = useCallback((sender: "user" | "assistant", text: string) => {
     const message: Message = {
@@ -45,40 +106,130 @@ export default function Home() {
     setMessages((prev) => [...prev, message])
   }, [])
 
-  const speak = useCallback((text: string) => {
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      const utterance = new SpeechSynthesisUtterance(text)
-      utterance.rate = 0.9
-      utterance.pitch = 1.1
-      utterance.onstart = () => setIsSpeaking(true)
-      utterance.onend = () => setIsSpeaking(false)
-      utterance.onerror = () => setIsSpeaking(false)
-      window.speechSynthesis.speak(utterance)
-    }
-  }, [])
+  const speak = useCallback(
+    (text: string) => {
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        const speakWithVoice = () => {
+          const utterance = new SpeechSynthesisUtterance(text)
+          utterance.rate = 0.9
+          utterance.pitch = 1.1
+
+          const voices = window.speechSynthesis.getVoices()
+
+          if (language === "ar") {
+            const arabicFemaleVoice =
+              voices.find(
+                (voice) =>
+                  (voice.lang.startsWith("ar") || voice.name.toLowerCase().includes("arabic")) &&
+                  (voice.name.toLowerCase().includes("female") ||
+                    voice.name.toLowerCase().includes("woman") ||
+                    voice.name.toLowerCase().includes("zira") ||
+                    voice.name.toLowerCase().includes("hoda")),
+              ) ||
+              voices.find((voice) => voice.lang.startsWith("ar") && voice.name.toLowerCase().includes("female")) ||
+              voices.find((voice) => voice.lang.startsWith("ar"))
+
+            if (arabicFemaleVoice) {
+              utterance.voice = arabicFemaleVoice
+              console.log("Selected Arabic voice:", arabicFemaleVoice.name)
+            }
+            utterance.lang = "ar-SA"
+          } else {
+            const englishFemaleVoice =
+              voices.find(
+                (voice) =>
+                  voice.lang.startsWith("en") &&
+                  (voice.name.toLowerCase().includes("female") ||
+                    voice.name.toLowerCase().includes("woman") ||
+                    voice.name.toLowerCase().includes("samantha") ||
+                    voice.name.toLowerCase().includes("karen") ||
+                    voice.name.toLowerCase().includes("susan") ||
+                    voice.name.toLowerCase().includes("victoria") ||
+                    voice.name.toLowerCase().includes("allison") ||
+                    voice.name.toLowerCase().includes("ava") ||
+                    voice.name.toLowerCase().includes("serena") ||
+                    voice.name.toLowerCase().includes("zira")),
+              ) ||
+              voices.find((voice) => voice.lang.startsWith("en") && voice.name.toLowerCase().includes("female")) ||
+              voices.find((voice) => voice.lang.startsWith("en") && !voice.name.toLowerCase().includes("male")) ||
+              voices.find((voice) => voice.lang.startsWith("en"))
+
+            if (englishFemaleVoice) {
+              utterance.voice = englishFemaleVoice
+              console.log("Selected English voice:", englishFemaleVoice.name)
+            }
+            utterance.lang = "en-US"
+          }
+
+          utterance.onstart = () => setIsSpeaking(true)
+          utterance.onend = () => setIsSpeaking(false)
+          utterance.onerror = () => setIsSpeaking(false)
+          window.speechSynthesis.speak(utterance)
+        }
+
+        const voices = window.speechSynthesis.getVoices()
+        if (voices.length === 0) {
+          window.speechSynthesis.onvoiceschanged = () => {
+            speakWithVoice()
+            window.speechSynthesis.onvoiceschanged = null // Remove listener after use
+          }
+        } else {
+          speakWithVoice()
+        }
+      }
+    },
+    [language],
+  )
 
   const processUserInput = useCallback(
-    (input: string) => {
+    async (input: string) => {
       if (!input.trim()) return
 
       addMessage("user", input)
 
-      let response = "I understand you said: " + input + ". "
+      try {
+        setIsSpeaking(true)
 
-      if (input.toLowerCase().includes("appointment") || input.toLowerCase().includes("book")) {
-        response += "I can help you book an appointment. What service do you need?"
-      } else if (input.toLowerCase().includes("licence") || input.toLowerCase().includes("license")) {
-        response += "I can help with driving licence services. Do you need a new licence, renewal, or replacement?"
-      } else if (input.toLowerCase().includes("hello") || input.toLowerCase().includes("hi")) {
-        response = "Hello! I'm Ava, your virtual assistant for the Driving Licence Authority. How can I help you today?"
-      } else {
-        response += "How can I assist you with your driving licence needs today?"
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: input,
+            language: language,
+            conversationHistory: messages, // Include full conversation context
+          }),
+        })
+
+        if (!response.ok) {
+          throw new Error("Failed to get AI response")
+        }
+
+        const data = await response.json()
+
+        if (data.error) {
+          throw new Error(data.error)
+        }
+
+        const aiResponse = data.response
+        addMessage("assistant", aiResponse)
+        speak(aiResponse)
+      } catch (error) {
+        console.error("AI processing error:", error)
+
+        const fallbackResponse =
+          language === "ar"
+            ? "عذراً، أواجه مشكلة تقنية. كيف يمكنني مساعدتك في خدمات رخصة القيادة؟"
+            : "I'm experiencing a technical issue. How can I help you with driving licence services?"
+
+        addMessage("assistant", fallbackResponse)
+        speak(fallbackResponse)
+      } finally {
+        setIsSpeaking(false)
       }
-
-      addMessage("assistant", response)
-      speak(response)
     },
-    [addMessage, speak],
+    [addMessage, speak, language, messages], // Added messages dependency for context
   )
 
   const initializeSpeechRecognition = useCallback(() => {
@@ -91,7 +242,7 @@ export default function Home() {
       const recognition = new SpeechRecognition()
       recognition.continuous = true
       recognition.interimResults = true
-      recognition.lang = "en-US"
+      recognition.lang = language === "ar" ? "ar-SA" : "en-US"
 
       recognition.onstart = () => {
         setIsListening(true)
@@ -101,14 +252,49 @@ export default function Home() {
       recognition.onend = () => {
         setIsListening(false)
         setCurrentTranscript("")
+        if (isCallActive && microphoneEnabled && !isSpeaking) {
+          setTimeout(() => {
+            try {
+              recognitionRef.current?.start()
+            } catch (error) {
+              console.error("Failed to restart recognition:", error)
+            }
+          }, 1000)
+        }
       }
 
       recognition.onerror = (event: any) => {
         console.error("Speech recognition error:", event.error)
         setIsListening(false)
         setCurrentTranscript("")
+
         if (event.error === "not-allowed") {
           setMicrophonePermission("denied")
+        } else if (event.error === "no-speech") {
+          console.log("No speech detected, continuing to listen...")
+          if (isCallActive && microphoneEnabled && !isSpeaking) {
+            setTimeout(() => {
+              try {
+                recognitionRef.current?.start()
+              } catch (error) {
+                console.error("Failed to restart after no-speech:", error)
+              }
+            }, 500)
+          }
+        } else if (event.error === "audio-capture") {
+          console.error("Audio capture error - microphone may be unavailable")
+          setMicrophonePermission("denied")
+        } else if (event.error === "network") {
+          console.error("Network error - retrying in 2 seconds")
+          if (isCallActive && microphoneEnabled && !isSpeaking) {
+            setTimeout(() => {
+              try {
+                recognitionRef.current?.start()
+              } catch (error) {
+                console.error("Failed to restart after network error:", error)
+              }
+            }, 2000)
+          }
         }
       }
 
@@ -138,7 +324,7 @@ export default function Home() {
       console.error("Speech recognition initialization failed:", error)
       return false
     }
-  }, [processUserInput])
+  }, [processUserInput, language, isCallActive, isSpeaking, microphoneEnabled]) // Added microphoneEnabled dependency
 
   const startCall = useCallback(async () => {
     try {
@@ -151,12 +337,12 @@ export default function Home() {
 
     setIsCallActive(true)
     setMessages([])
+    setMicrophoneEnabled(true) // Enable microphone by default when starting call
 
     const speechInitialized = initializeSpeechRecognition()
     setIsVoiceSupported(speechInitialized)
 
-    const greeting =
-      "Hello! Welcome to the Driving Licence Authority. I'm Ava, your virtual assistant. How can I help you today?"
+    const greeting = t.greeting
     addMessage("assistant", greeting)
     speak(greeting)
 
@@ -169,7 +355,7 @@ export default function Home() {
         }
       }, 3000)
     }
-  }, [initializeSpeechRecognition, addMessage, speak])
+  }, [initializeSpeechRecognition, addMessage, speak, t])
 
   const endCall = useCallback(() => {
     setIsCallActive(false)
@@ -177,6 +363,7 @@ export default function Home() {
     setIsSpeaking(false)
     setMessages([])
     setCurrentTranscript("")
+    setMicrophoneEnabled(false) // Disable microphone when ending call
 
     if (recognitionRef.current) {
       try {
@@ -191,23 +378,39 @@ export default function Home() {
     }
   }, [])
 
-  const toggleListening = useCallback(() => {
-    if (!recognitionRef.current) return
+  const toggleMicrophone = useCallback(() => {
+    const newMicState = !microphoneEnabled
+    setMicrophoneEnabled(newMicState)
 
-    if (isListening) {
+    if (recognitionRef.current) {
       try {
-        recognitionRef.current.stop()
+        if (newMicState) {
+          recognitionRef.current.start()
+        } else {
+          recognitionRef.current.stop()
+        }
       } catch (error) {
-        console.error("Failed to stop recognition:", error)
-      }
-    } else {
-      try {
-        recognitionRef.current.start()
-      } catch (error) {
-        console.error("Failed to start recognition:", error)
+        console.error("Failed to toggle microphone:", error)
       }
     }
-  }, [isListening])
+  }, [microphoneEnabled])
+
+  const handleLanguageChange = useCallback(
+    (newLanguage: "en" | "ar") => {
+      setLanguage(newLanguage)
+      if (isCallActive && recognitionRef.current) {
+        try {
+          recognitionRef.current.stop()
+          setTimeout(() => {
+            initializeSpeechRecognition()
+          }, 500)
+        } catch (error) {
+          console.error("Failed to restart recognition with new language:", error)
+        }
+      }
+    },
+    [isCallActive, initializeSpeechRecognition],
+  )
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -218,257 +421,317 @@ export default function Home() {
 
   return (
     <div
-      style={{ minHeight: "100vh", backgroundColor: "#000", color: "#fff", display: "flex", flexDirection: "column" }}
+      className={`min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-indigo-900 text-foreground flex flex-col ${language === "ar" ? "rtl" : "ltr"}`}
+      dir={language === "ar" ? "rtl" : "ltr"}
     >
-      <div style={{ padding: "1rem", borderBottom: "1px solid #374151" }}>
-        <div
-          style={{
-            maxWidth: "56rem",
-            margin: "0 auto",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <div>
-            <h1 style={{ fontSize: "1.25rem", fontWeight: "600", margin: 0 }}>Driving Licence Authority</h1>
-            <p style={{ fontSize: "0.875rem", color: "#9ca3af", margin: "0.25rem 0 0 0" }}>AI Voice Assistant - Ava</p>
-          </div>
-          {isCallActive && (
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <div
-                  style={{
-                    width: "0.5rem",
-                    height: "0.5rem",
-                    backgroundColor: "#10b981",
-                    borderRadius: "50%",
-                    animation: "pulse 2s infinite",
-                  }}
-                />
-                <span style={{ fontSize: "0.875rem", color: "#4ade80" }}>Call Active</span>
+      <header className="glass-effect border-b border-border/50 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-blue-700 flex items-center justify-center shadow-lg">
+                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+                  />
+                </svg>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <div
-                  style={{
-                    width: "0.5rem",
-                    height: "0.5rem",
-                    backgroundColor: isListening ? "#10b981" : isSpeaking ? "#3b82f6" : "#6b7280",
-                    borderRadius: "50%",
-                  }}
-                />
-                <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
-                  {isListening ? "Listening" : isSpeaking ? "Speaking" : "Ready"}
-                </span>
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-700 to-indigo-700 bg-clip-text text-transparent">
+                  {t.title}
+                </h1>
+                <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">{t.subtitle}</p>
               </div>
             </div>
-          )}
+
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{t.language}:</span>
+                <div className="flex rounded-lg bg-slate-100 dark:bg-slate-800 p-1">
+                  <button
+                    onClick={() => handleLanguageChange("en")}
+                    className={`px-3 py-1 text-sm font-medium rounded-md transition-all ${
+                      language === "en"
+                        ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+                    }`}
+                  >
+                    EN
+                  </button>
+                  <button
+                    onClick={() => handleLanguageChange("ar")}
+                    className={`px-3 py-1 text-sm font-medium rounded-md transition-all ${
+                      language === "ar"
+                        ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+                    }`}
+                  >
+                    العربية
+                  </button>
+                </div>
+              </div>
+
+              {isCallActive && (
+                <div className="flex items-center gap-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-lg shadow-green-500/50" />
+                    <span className="text-sm font-medium text-green-600 dark:text-green-400">{t.callActive}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-3 h-3 rounded-full transition-all duration-300 ${
+                        isListening && microphoneEnabled
+                          ? "bg-blue-500 shadow-lg shadow-blue-500/50 listening"
+                          : isSpeaking
+                            ? "bg-indigo-500 shadow-lg shadow-indigo-500/50 speaking"
+                            : "bg-slate-400 dark:bg-slate-500"
+                      }`}
+                    />
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                      {isListening && microphoneEnabled ? t.listening : isSpeaking ? t.speaking : t.ready}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
+      </header>
 
       {!isVoiceSupported && (
-        <div
-          style={{
-            backgroundColor: "#451a03",
-            border: "1px solid #eab308",
-            padding: "0.75rem",
-            margin: "1rem",
-            borderRadius: "0.5rem",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <span style={{ color: "#facc15" }}>⚠️</span>
-            <p style={{ color: "#fef08a", margin: 0 }}>
-              Voice recognition is not supported in your browser. Please use Chrome, Edge, or Safari for the best
-              experience.
-            </p>
+        <div className="mx-6 mt-4 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+          <div className="flex items-start gap-3">
+            <div className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5">
+              <svg fill="currentColor" viewBox="0 0 20 20">
+                <path
+                  fillRule="evenodd"
+                  d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </div>
+            <div>
+              <h3 className="font-semibold text-amber-800 dark:text-amber-200">{t.browserNotice}</h3>
+              <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">{t.browserMessage}</p>
+            </div>
           </div>
         </div>
       )}
 
       {microphonePermission === "denied" && (
-        <div
-          style={{
-            backgroundColor: "#450a0a",
-            border: "1px solid #ef4444",
-            padding: "0.75rem",
-            margin: "1rem",
-            borderRadius: "0.5rem",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <span style={{ color: "#f87171" }}>⚠️</span>
-            <p style={{ color: "#fecaca", margin: 0 }}>
-              Microphone access is required for voice functionality. Please enable microphone permissions and refresh
-              the page.
-            </p>
+        <div className="mx-6 mt-4 p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <div className="flex items-start gap-3">
+            <div className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5">
+              <svg fill="currentColor" viewBox="0 0 20 20">
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 001.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </div>
+            <div>
+              <h3 className="font-semibold text-red-800 dark:text-red-200">{t.microphoneRequired}</h3>
+              <p className="text-sm text-red-700 dark:text-red-300 mt-1">{t.microphoneMessage}</p>
+            </div>
           </div>
         </div>
       )}
 
-      <div style={{ flex: 1, display: "flex", maxWidth: "56rem", margin: "0 auto", width: "100%" }}>
-        {!isCallActive ? (
-          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem" }}>
-            <div style={{ textAlign: "center" }}>
-              <div
-                style={{
-                  width: "6rem",
-                  height: "6rem",
-                  margin: "0 auto 2rem auto",
-                  background: "linear-gradient(to right, #3b82f6, #8b5cf6)",
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <span style={{ fontSize: "3rem" }}>📞</span>
+      <main className="flex-1 flex max-w-7xl mx-auto w-full">
+        {!isCallActive && (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="text-center max-w-lg">
+              <div className="relative mb-8">
+                <div className="w-36 h-36 mx-auto rounded-3xl bg-gradient-to-br from-blue-600 via-indigo-600 to-blue-700 flex items-center justify-center shadow-2xl shadow-blue-500/25">
+                  <div className="w-20 h-20 text-white">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
+                      />
+                    </svg>
+                  </div>
+                </div>
+                <div className="absolute -inset-6 bg-gradient-to-r from-blue-500/20 to-indigo-500/20 rounded-full blur-2xl -z-10"></div>
               </div>
-              <div>
-                <h2 style={{ fontSize: "1.5rem", fontWeight: "600", marginBottom: "1rem" }}>Ready to Assist You</h2>
-                <p style={{ color: "#9ca3af", marginBottom: "2rem", maxWidth: "28rem" }}>
-                  Start a natural conversation with Ava for all your driving licence needs.
-                </p>
+
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-4xl font-bold bg-gradient-to-r from-blue-700 to-indigo-700 bg-clip-text text-transparent mb-3">
+                    {t.readyTitle}
+                  </h2>
+                  <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">{t.readyMessage}</p>
+                </div>
+
                 <button
                   onClick={startCall}
-                  style={{
-                    background: "linear-gradient(to right, #3b82f6, #8b5cf6)",
-                    color: "#fff",
-                    padding: "0.75rem 2rem",
-                    borderRadius: "0.375rem",
-                    border: "none",
-                    fontSize: "1rem",
-                    fontWeight: "500",
-                    cursor: "pointer",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                  }}
+                  className="group relative inline-flex items-center gap-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-8 py-4 rounded-2xl text-lg font-semibold shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30 transition-all duration-300 hover:scale-105"
                 >
-                  📞 Start Call
+                  <div className="w-6 h-6">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
+                      />
+                    </svg>
+                  </div>
+                  {t.startConversation}
+                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-white/20 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                 </button>
               </div>
             </div>
           </div>
-        ) : (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-            <div style={{ flex: 1, overflowY: "auto", padding: "1rem" }}>
+        )}
+
+        {isCallActive && (
+          <div className="flex-1 flex flex-col">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {messages.map((message) => (
-                <div key={message.id} style={{ marginBottom: "1rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-                    <span style={{ fontSize: "0.875rem", color: "#9ca3af", textTransform: "capitalize" }}>
-                      {message.sender}
+                <div key={message.id} className="message-enter">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                        message.sender === "user"
+                          ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+                          : "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400"
+                      }`}
+                    >
+                      {message.sender === "user" ? (
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path
+                            fillRule="evenodd"
+                            d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path
+                            fillRule="evenodd"
+                            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 16a5.986 5.986 0 004.546-2.084A5 5 0 0010 11z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                    <span className="text-sm font-semibold capitalize text-slate-700 dark:text-slate-300">
+                      {message.sender === "user" ? t.you : t.ava}
                     </span>
-                    <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
                       {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>
                   </div>
                   <div
-                    style={{
-                      padding: "1rem",
-                      borderRadius: "1rem",
-                      maxWidth: "48rem",
-                      backgroundColor: message.sender === "user" ? "#1f2937" : "#111827",
-                      border: message.sender === "user" ? "1px solid #374151" : "1px solid #1f2937",
-                    }}
+                    className={`${language === "ar" ? "mr-11" : "ml-11"} p-4 rounded-2xl max-w-4xl shadow-sm ${
+                      message.sender === "user"
+                        ? "bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800"
+                        : "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                    }`}
                   >
-                    <p style={{ color: "#fff", lineHeight: "1.625", margin: 0 }}>{message.text}</p>
+                    <p className="text-slate-800 dark:text-slate-200 leading-relaxed">{message.text}</p>
                   </div>
                 </div>
               ))}
 
               {currentTranscript && (
-                <div style={{ marginBottom: "1rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-                    <span style={{ fontSize: "0.875rem", color: "#9ca3af" }}>User</span>
-                    <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>Speaking...</span>
+                <div className="message-enter">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-8 h-8 rounded-full bg-blue-200 dark:bg-blue-800/50 text-blue-600 dark:text-blue-400 flex items-center justify-center voice-wave">
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                          fillRule="evenodd"
+                          d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    </div>
+                    <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">{t.you}</span>
+                    <span className="text-xs text-blue-500 dark:text-blue-400">{t.speakingStatus}</span>
                   </div>
                   <div
-                    style={{
-                      padding: "1rem",
-                      borderRadius: "1rem",
-                      maxWidth: "48rem",
-                      backgroundColor: "#1f2937",
-                      border: "1px solid #3b82f6",
-                    }}
+                    className={`${language === "ar" ? "mr-11" : "ml-11"} p-4 rounded-2xl max-w-4xl bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700 voice-wave`}
                   >
-                    <p style={{ color: "#bfdbfe", margin: 0 }}>{currentTranscript}</p>
+                    <p className="text-blue-800 dark:text-blue-200 font-medium">{currentTranscript}</p>
                   </div>
                 </div>
               )}
             </div>
 
-            <div style={{ padding: "1rem", borderTop: "1px solid #1f2937" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "1rem" }}>
+            <div className="glass-effect border-t border-border/50 p-6 bg-white/80 dark:bg-slate-900/80">
+              <div className="flex items-center justify-center gap-6">
                 <button
-                  onClick={toggleListening}
+                  onClick={toggleMicrophone}
                   disabled={!isVoiceSupported || microphonePermission === "denied"}
-                  style={{
-                    width: "3.5rem",
-                    height: "3.5rem",
-                    borderRadius: "50%",
-                    border: "none",
-                    backgroundColor: isListening ? "#ef4444" : "#10b981",
-                    color: "#fff",
-                    cursor: "pointer",
-                    fontSize: "1.5rem",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    opacity: !isVoiceSupported || microphonePermission === "denied" ? 0.5 : 1,
-                  }}
+                  className={`relative w-16 h-16 rounded-full border-none text-white cursor-pointer text-2xl flex items-center justify-center transition-all duration-300 shadow-lg ${
+                    microphoneEnabled
+                      ? "bg-blue-600 hover:bg-blue-700 shadow-blue-500/25"
+                      : "bg-slate-500 hover:bg-slate-600 shadow-slate-500/25"
+                  } ${!isVoiceSupported || microphonePermission === "denied" ? "opacity-50 cursor-not-allowed" : "hover:scale-105"}`}
                 >
-                  {isListening ? "🔇" : "🎤"}
+                  <div className="w-6 h-6">
+                    {microphoneEnabled ? (
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"
+                        />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 10v2a7 7 0 01-14 0v-2" />
+                        <line x1="12" y1="19" x2="12" y2="23" />
+                        <line x1="8" y1="23" x2="16" y2="23" />
+                      </svg>
+                    ) : (
+                      <svg fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                          fillRule="evenodd"
+                          d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    )}
+                  </div>
+                  {isListening && microphoneEnabled && (
+                    <div className="absolute inset-0 rounded-full bg-blue-400/30 animate-ping"></div>
+                  )}
                 </button>
 
                 <button
                   onClick={endCall}
-                  style={{
-                    backgroundColor: "#dc2626",
-                    color: "#fff",
-                    padding: "0.75rem 1.5rem",
-                    borderRadius: "9999px",
-                    border: "none",
-                    fontSize: "1rem",
-                    fontWeight: "500",
-                    cursor: "pointer",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                  }}
+                  className="group relative bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-xl font-semibold transition-all duration-300 hover:scale-105 shadow-lg shadow-red-500/25 flex items-center gap-2"
                 >
-                  📞 End Call
+                  <div className="w-5 h-5">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"
+                      />
+                    </svg>
+                  </div>
+                  {t.endCall}
                 </button>
               </div>
 
-              <div style={{ textAlign: "center", marginTop: "1rem" }}>
-                <p style={{ fontSize: "0.875rem", color: "#9ca3af", margin: 0 }}>
+              <div className="text-center mt-4">
+                <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">
                   {isSpeaking
-                    ? "Ava is speaking..."
-                    : isListening
-                      ? "Listening... speak naturally"
-                      : "Click the microphone to start listening"}
+                    ? t.avaIsSpeaking
+                    : isListening && microphoneEnabled
+                      ? t.listeningPrompt
+                      : microphoneEnabled
+                        ? t.clickMicrophone
+                        : `${t.micOff} - ${language === "ar" ? "انقر لتشغيل الميكروفون" : "Click to enable microphone"}`}
                 </p>
               </div>
             </div>
           </div>
         )}
-      </div>
-
-      <style jsx global>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-        * {
-          box-sizing: border-box;
-        }
-        body {
-          margin: 0;
-          padding: 0;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-        }
-      `}</style>
+      </main>
     </div>
   )
 }
