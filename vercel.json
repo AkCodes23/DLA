@@ -4,8 +4,8 @@
   "installCommand": "npm install --no-package-lock --no-save --force",
   "framework": "nextjs",
   "functions": {
-    "app/**/*.ts": {
-      "runtime": "nodejs18.x"
+    "app/api/**/*.ts": {
+      "runtime": "nodejs20.x"
     }
   },
   "env": {
