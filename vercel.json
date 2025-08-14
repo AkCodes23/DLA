@@ -4,14 +4,8 @@
   "installCommand": "npm install --no-package-lock --no-save --force",
   "framework": "nextjs",
   "functions": {
-    "app/api/**/*.ts": {
+    "app/api/chat/route.ts": {
       "runtime": "nodejs20.x"
     }
-  },
-  "env": {
-    "FORCE_NPM": "true",
-    "NPM_CONFIG_FUND": "false",
-    "NPM_CONFIG_AUDIT": "false",
-    "NPM_CONFIG_PACKAGE_LOCK": "false"
   }
 }
