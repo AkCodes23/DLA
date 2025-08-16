@@ -93,6 +93,22 @@ export default function Home() {
   const [microphoneEnabled, setMicrophoneEnabled] = useState(true) // Added microphone toggle state
 
   const recognitionRef = useRef<SpeechRecognitionInline | null>(null)
+  const isCallActiveRef = useRef(false)
+  const isSpeakingRef = useRef(false)
+  const microphoneEnabledRef = useRef(true)
+  const lastProcessedResultRef = useRef(0) // Added ref to track last processed result index to prevent duplicate processing
+
+  useEffect(() => {
+    isCallActiveRef.current = isCallActive
+  }, [isCallActive])
+
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking
+  }, [isSpeaking])
+
+  useEffect(() => {
+    microphoneEnabledRef.current = microphoneEnabled
+  }, [microphoneEnabled])
 
   const t = translations[language]
 
@@ -108,6 +124,17 @@ export default function Home() {
 
   const speak = useCallback(
     (text: string) => {
+      console.log("[v0] Starting speech synthesis:", { text, language })
+
+      if (recognitionRef.current && isListening) {
+        try {
+          recognitionRef.current.stop()
+          console.log("[v0] Pausing speech recognition during AI speech")
+        } catch (error) {
+          console.error("[v0] Failed to pause speech recognition:", error)
+        }
+      }
+
       if (typeof window !== "undefined" && window.speechSynthesis) {
         const speakWithVoice = () => {
           const utterance = new SpeechSynthesisUtterance(text)
@@ -115,6 +142,7 @@ export default function Home() {
           utterance.pitch = 1.1
 
           const voices = window.speechSynthesis.getVoices()
+          console.log("[v0] Available voices:", voices.length)
 
           if (language === "ar") {
             const arabicFemaleVoice =
@@ -131,7 +159,9 @@ export default function Home() {
 
             if (arabicFemaleVoice) {
               utterance.voice = arabicFemaleVoice
-              console.log("Selected Arabic voice:", arabicFemaleVoice.name)
+              console.log("[v0] Selected Arabic voice:", arabicFemaleVoice.name)
+            } else {
+              console.log("[v0] No Arabic voice found, using default")
             }
             utterance.lang = "ar-SA"
           } else {
@@ -156,87 +186,184 @@ export default function Home() {
 
             if (englishFemaleVoice) {
               utterance.voice = englishFemaleVoice
-              console.log("Selected English voice:", englishFemaleVoice.name)
+              console.log("[v0] Selected English voice:", englishFemaleVoice.name)
+            } else {
+              console.log("[v0] No English female voice found, using default")
             }
             utterance.lang = "en-US"
           }
 
-          utterance.onstart = () => setIsSpeaking(true)
-          utterance.onend = () => setIsSpeaking(false)
-          utterance.onerror = () => setIsSpeaking(false)
-          window.speechSynthesis.speak(utterance)
+          utterance.onstart = () => {
+            console.log("[v0] Speech started")
+            setIsSpeaking(true)
+          }
+          utterance.onend = () => {
+            console.log("[v0] Speech ended")
+            setIsSpeaking(false)
+          }
+          utterance.onerror = (error) => {
+            console.log("[v0] Speech synthesis error details:", {
+              error: error.error,
+              type: error.type,
+              target: error.target,
+              timeStamp: error.timeStamp,
+            })
+
+            // Handle specific error types
+            if (error.error === "network") {
+              console.log("[v0] Network error during speech synthesis - will retry")
+              // Retry after a short delay
+              setTimeout(() => {
+                try {
+                  window.speechSynthesis.cancel()
+                  window.speechSynthesis.speak(utterance)
+                } catch (retryError) {
+                  console.error("[v0] Speech synthesis retry failed:", retryError)
+                  setIsSpeaking(false)
+                }
+              }, 1000)
+            } else if (error.error === "synthesis-failed") {
+              console.log("[v0] Speech synthesis failed - text may be too long or invalid")
+              setIsSpeaking(false)
+            } else if (error.error === "synthesis-unavailable") {
+              console.log("[v0] Speech synthesis unavailable - using fallback")
+              setIsSpeaking(false)
+            } else {
+              console.log("[v0] Speech synthesis error:", error.error || "Unknown error")
+              setIsSpeaking(false)
+            }
+          }
+
+          utterance.onboundary = null
+
+          try {
+            window.speechSynthesis.speak(utterance)
+          } catch (speakError) {
+            console.error("[v0] Failed to start speech synthesis:", speakError)
+            setIsSpeaking(false)
+          }
         }
 
         const voices = window.speechSynthesis.getVoices()
         if (voices.length === 0) {
+          console.log("[v0] Waiting for voices to load...")
           window.speechSynthesis.onvoiceschanged = () => {
+            console.log("[v0] Voices loaded, proceeding with speech")
             speakWithVoice()
             window.speechSynthesis.onvoiceschanged = null // Remove listener after use
           }
         } else {
           speakWithVoice()
         }
+      } else {
+        console.error("[v0] Speech synthesis not supported")
       }
     },
-    [language],
+    [language], // Removed isListening dependency to simplify
   )
 
   const processUserInput = useCallback(
     async (input: string) => {
       if (!input.trim()) return
 
-      addMessage("user", input)
+      console.log("[v0] Processing user input:", input)
 
-      try {
-        setIsSpeaking(true)
-
-        const response = await fetch("/api/chat", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            message: input,
-            language: language,
-            conversationHistory: messages, // Include full conversation context
-          }),
-        })
-
-        if (!response.ok) {
-          throw new Error("Failed to get AI response")
-        }
-
-        const data = await response.json()
-
-        if (data.error) {
-          throw new Error(data.error)
-        }
-
-        const aiResponse = data.response
-        addMessage("assistant", aiResponse)
-        speak(aiResponse)
-      } catch (error) {
-        console.error("AI processing error:", error)
-
-        const fallbackResponse =
-          language === "ar"
-            ? "عذراً، أواجه مشكلة تقنية. كيف يمكنني مساعدتك في خدمات رخصة القيادة؟"
-            : "I'm experiencing a technical issue. How can I help you with driving licence services?"
-
-        addMessage("assistant", fallbackResponse)
-        speak(fallbackResponse)
-      } finally {
-        setIsSpeaking(false)
+      const userMessage: Message = {
+        id: `user-${Date.now()}`,
+        text: input,
+        sender: "user" as const,
+        timestamp: new Date(),
       }
+
+      // Update messages with user input
+      setMessages((prev) => {
+        const updatedMessages = [...prev, userMessage]
+        console.log("[v0] Updated conversation history:", updatedMessages.length, "messages")
+
+        const processAIResponse = async () => {
+          try {
+            console.log("[v0] Calling AI API...")
+            setIsSpeaking(true)
+
+            const response = await fetch("/api/chat", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                message: input,
+                language: language,
+                conversationHistory: updatedMessages, // Use updated messages for context
+              }),
+            })
+
+            console.log("[v0] API response status:", response.status)
+
+            if (!response.ok) {
+              throw new Error(`API request failed with status ${response.status}`)
+            }
+
+            const data = await response.json()
+            console.log("[v0] AI response received:", data)
+
+            if (data.error) {
+              throw new Error(data.error)
+            }
+
+            const aiResponse = data.response
+            const assistantMessage: Message = {
+              id: `assistant-${Date.now()}`,
+              text: aiResponse,
+              sender: "assistant" as const,
+              timestamp: new Date(),
+            }
+
+            console.log("[v0] Adding AI response to conversation")
+            setMessages((prevMessages) => [...prevMessages, assistantMessage])
+            speak(aiResponse)
+          } catch (error) {
+            console.error("[v0] AI processing error:", error)
+
+            const fallbackResponse =
+              language === "ar"
+                ? "عذراً، أواجه مشكلة تقنية. كيف يمكنني مساعدتك في خدمات رخصة القيادة؟"
+                : "I'm experiencing a technical issue. How can I help you with driving licence services?"
+
+            const errorMessage: Message = {
+              id: `assistant-error-${Date.now()}`,
+              text: fallbackResponse,
+              sender: "assistant" as const,
+              timestamp: new Date(),
+            }
+
+            console.log("[v0] Using fallback response due to error")
+            setMessages((prevMessages) => [...prevMessages, errorMessage])
+            speak(fallbackResponse)
+          } finally {
+            setIsSpeaking(false)
+          }
+        }
+
+        processAIResponse()
+        return updatedMessages
+      })
     },
-    [addMessage, speak, language, messages], // Added messages dependency for context
+    [speak, language], // Removed messages dependency to avoid circular dependency
   )
 
   const initializeSpeechRecognition = useCallback(() => {
-    if (typeof window === "undefined") return false
+    console.log("[v0] Initializing speech recognition for language:", language)
+
+    if (typeof window === "undefined") {
+      console.log("[v0] Window undefined, cannot initialize speech recognition")
+      return false
+    }
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SpeechRecognition) return false
+    if (!SpeechRecognition) {
+      console.log("[v0] Speech recognition not supported in this browser")
+      return false
+    }
 
     try {
       const recognition = new SpeechRecognition()
@@ -244,68 +371,78 @@ export default function Home() {
       recognition.interimResults = true
       recognition.lang = language === "ar" ? "ar-SA" : "en-US"
 
+      console.log("[v0] Speech recognition configured for:", recognition.lang)
+
       recognition.onstart = () => {
+        console.log("[v0] Speech recognition started")
         setIsListening(true)
         setCurrentTranscript("")
+        lastProcessedResultRef.current = 0
       }
 
       recognition.onend = () => {
+        console.log("[v0] Speech recognition ended")
         setIsListening(false)
         setCurrentTranscript("")
-        if (isCallActive && microphoneEnabled && !isSpeaking) {
+        lastProcessedResultRef.current = 0
+
+        if (isCallActiveRef.current && microphoneEnabledRef.current && !isSpeakingRef.current) {
+          console.log("[v0] Auto-restarting speech recognition...")
           setTimeout(() => {
             try {
-              recognitionRef.current?.start()
+              if (
+                recognitionRef.current &&
+                isCallActiveRef.current &&
+                microphoneEnabledRef.current &&
+                !isSpeakingRef.current
+              ) {
+                recognitionRef.current.start()
+              }
             } catch (error) {
-              console.error("Failed to restart recognition:", error)
+              console.error("[v0] Failed to restart recognition:", error)
             }
-          }, 1000)
+          }, 500)
         }
       }
 
       recognition.onerror = (event: any) => {
-        console.error("Speech recognition error:", event.error)
-        setIsListening(false)
-        setCurrentTranscript("")
-
         if (event.error === "not-allowed") {
+          console.log("[v0] Microphone permission denied")
           setMicrophonePermission("denied")
+          setIsListening(false)
+          setCurrentTranscript("")
         } else if (event.error === "no-speech") {
-          console.log("No speech detected, continuing to listen...")
-          if (isCallActive && microphoneEnabled && !isSpeaking) {
-            setTimeout(() => {
-              try {
-                recognitionRef.current?.start()
-              } catch (error) {
-                console.error("Failed to restart after no-speech:", error)
-              }
-            }, 500)
-          }
+          setCurrentTranscript("")
         } else if (event.error === "audio-capture") {
-          console.error("Audio capture error - microphone may be unavailable")
+          console.error("[v0] Audio capture error - microphone may be unavailable")
           setMicrophonePermission("denied")
+          setIsListening(false)
+          setCurrentTranscript("")
         } else if (event.error === "network") {
-          console.error("Network error - retrying in 2 seconds")
-          if (isCallActive && microphoneEnabled && !isSpeaking) {
-            setTimeout(() => {
-              try {
-                recognitionRef.current?.start()
-              } catch (error) {
-                console.error("Failed to restart after network error:", error)
-              }
-            }, 2000)
-          }
+          console.error("[v0] Network error - will retry automatically")
+          setIsListening(false)
+          setCurrentTranscript("")
+        } else {
+          console.error("[v0] Speech recognition error:", event.error)
+          setIsListening(false)
+          setCurrentTranscript("")
         }
       }
 
       recognition.onresult = (event: any) => {
+        if (isSpeakingRef.current) {
+          console.log("[v0] Ignoring speech input while AI is speaking")
+          return
+        }
+
         let interimTranscript = ""
         let finalTranscript = ""
 
-        for (let i = event.resultIndex; i < event.results.length; i++) {
+        for (let i = lastProcessedResultRef.current; i < event.results.length; i++) {
           const transcript = event.results[i][0].transcript
           if (event.results[i].isFinal) {
             finalTranscript += transcript
+            lastProcessedResultRef.current = i + 1
           } else {
             interimTranscript += transcript
           }
@@ -314,25 +451,31 @@ export default function Home() {
         setCurrentTranscript(interimTranscript)
 
         if (finalTranscript.trim()) {
+          console.log("[v0] Final transcript received:", finalTranscript.trim())
+          setCurrentTranscript("")
           processUserInput(finalTranscript.trim())
         }
       }
 
       recognitionRef.current = recognition
+      console.log("[v0] Speech recognition initialized successfully")
       return true
     } catch (error) {
-      console.error("Speech recognition initialization failed:", error)
+      console.error("[v0] Speech recognition initialization failed:", error)
       return false
     }
-  }, [processUserInput, language, isCallActive, isSpeaking, microphoneEnabled]) // Added microphoneEnabled dependency
+  }, [processUserInput, language])
 
   const startCall = useCallback(async () => {
+    console.log("[v0] Starting call...")
+
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true })
+      console.log("[v0] Microphone access granted")
       setMicrophonePermission("granted")
     } catch (error) {
+      console.error("[v0] Microphone access denied:", error)
       setMicrophonePermission("denied")
-      console.error("Microphone access denied:", error)
     }
 
     setIsCallActive(true)
@@ -341,13 +484,16 @@ export default function Home() {
 
     const speechInitialized = initializeSpeechRecognition()
     setIsVoiceSupported(speechInitialized)
+    console.log("[v0] Voice support:", speechInitialized)
 
     const greeting = t.greeting
+    console.log("[v0] Playing greeting:", greeting)
     addMessage("assistant", greeting)
     speak(greeting)
 
     if (speechInitialized && recognitionRef.current) {
       setTimeout(() => {
+        console.log("[v0] Starting speech recognition after greeting...")
         try {
           recognitionRef.current?.start()
         } catch (error) {
@@ -382,10 +528,14 @@ export default function Home() {
     const newMicState = !microphoneEnabled
     setMicrophoneEnabled(newMicState)
 
+    console.log("[v0] Toggling microphone:", newMicState ? "ON" : "OFF")
+
     if (recognitionRef.current) {
       try {
         if (newMicState) {
-          recognitionRef.current.start()
+          if (!isSpeakingRef.current) {
+            recognitionRef.current.start()
+          }
         } else {
           recognitionRef.current.stop()
         }
@@ -415,7 +565,9 @@ export default function Home() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      setIsVoiceSupported(!!SpeechRecognition)
+      const isSupported = !!SpeechRecognition
+      console.log("[v0] Browser voice support check:", isSupported)
+      setIsVoiceSupported(isSupported)
     }
   }, [])
 
@@ -527,7 +679,7 @@ export default function Home() {
               <svg fill="currentColor" viewBox="0 0 20 20">
                 <path
                   fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 001.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                  d="M8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 001.414 1.414l2 2a1 1 0 001.414 0l4-4a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
                   clipRule="evenodd"
                 />
               </svg>
@@ -551,7 +703,7 @@ export default function Home() {
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
+                        d="M15.75 6a3.75 3.75 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
                       />
                     </svg>
                   </div>
@@ -590,76 +742,75 @@ export default function Home() {
 
         {isCallActive && (
           <div className="flex-1 flex flex-col">
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {messages.map((message) => (
-                <div key={message.id} className="message-enter">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        message.sender === "user"
-                          ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
-                          : "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400"
-                      }`}
-                    >
-                      {message.sender === "user" ? (
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <div className="flex-1 flex items-center justify-center p-6">
+              <div className="text-center space-y-8">
+                {/* Voice status indicator */}
+                <div className="relative">
+                  <div
+                    className={`w-32 h-32 mx-auto rounded-full flex items-center justify-center transition-all duration-300 ${
+                      isListening && microphoneEnabled
+                        ? "bg-blue-600 shadow-2xl shadow-blue-500/50"
+                        : isSpeaking
+                          ? "bg-indigo-600 shadow-2xl shadow-indigo-500/50"
+                          : "bg-slate-600 shadow-xl shadow-slate-500/25"
+                    }`}
+                  >
+                    <div className="w-16 h-16 text-white">
+                      {isListening && microphoneEnabled ? (
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                           <path
-                            fillRule="evenodd"
-                            d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
-                            clipRule="evenodd"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"
+                          />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 10v2a7 7 0 01-14 0v-2" />
+                          <line x1="12" y1="19" x2="12" y2="23" />
+                          <line x1="8" y1="23" x2="16" y2="23" />
+                        </svg>
+                      ) : isSpeaking ? (
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
                           />
                         </svg>
                       ) : (
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                           <path
-                            fillRule="evenodd"
-                            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 16a5.986 5.986 0 004.546-2.084A5 5 0 0010 11z"
-                            clipRule="evenodd"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
                           />
                         </svg>
                       )}
                     </div>
-                    <span className="text-sm font-semibold capitalize text-slate-700 dark:text-slate-300">
-                      {message.sender === "user" ? t.you : t.ava}
-                    </span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                      {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </span>
-                  </div>
-                  <div
-                    className={`${language === "ar" ? "mr-11" : "ml-11"} p-4 rounded-2xl max-w-4xl shadow-sm ${
-                      message.sender === "user"
-                        ? "bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800"
-                        : "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
-                    }`}
-                  >
-                    <p className="text-slate-800 dark:text-slate-200 leading-relaxed">{message.text}</p>
+                    {isListening && microphoneEnabled && (
+                      <div className="absolute inset-0 rounded-full bg-blue-400/30 animate-ping"></div>
+                    )}
                   </div>
                 </div>
-              ))}
 
-              {currentTranscript && (
-                <div className="message-enter">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-8 h-8 rounded-full bg-blue-200 dark:bg-blue-800/50 text-blue-600 dark:text-blue-400 flex items-center justify-center voice-wave">
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                        <path
-                          fillRule="evenodd"
-                          d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
+                {/* Status text */}
+                <div className="space-y-2">
+                  <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+                    {isSpeaking
+                      ? t.avaIsSpeaking
+                      : isListening && microphoneEnabled
+                        ? t.listeningPrompt
+                        : microphoneEnabled
+                          ? t.clickMicrophone
+                          : `${t.micOff}`}
+                  </h3>
+
+                  {/* Current transcript display */}
+                  {currentTranscript && (
+                    <div className="max-w-2xl mx-auto p-4 rounded-2xl bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700">
+                      <p className="text-blue-800 dark:text-blue-200 font-medium text-lg">{currentTranscript}</p>
                     </div>
-                    <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">{t.you}</span>
-                    <span className="text-xs text-blue-500 dark:text-blue-400">{t.speakingStatus}</span>
-                  </div>
-                  <div
-                    className={`${language === "ar" ? "mr-11" : "ml-11"} p-4 rounded-2xl max-w-4xl bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700 voice-wave`}
-                  >
-                    <p className="text-blue-800 dark:text-blue-200 font-medium">{currentTranscript}</p>
-                  </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
 
             <div className="glass-effect border-t border-border/50 p-6 bg-white/80 dark:bg-slate-900/80">
